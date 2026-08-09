@@ -1,8 +1,13 @@
 package com.example.ui.screens
 
+import android.app.Activity
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
+import android.media.projection.MediaProjectionManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -36,6 +41,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -61,6 +67,20 @@ fun ScreenAnalysisHudScreen(
     val latestSignal by viewModel.latestActiveSignal.collectAsState()
     val allSignals by viewModel.filteredSignals.collectAsState()
     val highConfidenceSignal by viewModel.highConfidenceAiSignal.collectAsState()
+
+    val mediaProjectionManager = remember {
+        context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as? MediaProjectionManager
+    }
+
+    val mediaProjectionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK && result.data != null) {
+            viewModel.onMediaProjectionGranted(context, result.resultCode, result.data)
+        } else {
+            viewModel.onMediaProjectionDenied()
+        }
+    }
 
     val greenColor = Color(0xFF00E676)
     val redColor = Color(0xFFFF5252)
@@ -115,7 +135,23 @@ fun ScreenAnalysisHudScreen(
                 }
 
                 Button(
-                    onClick = { viewModel.toggleScreenCaptureService(context) },
+                    onClick = {
+                        if (isScreenCaptureActive) {
+                            viewModel.stopScreenCaptureService(context)
+                        } else {
+                            if (mediaProjectionManager != null) {
+                                try {
+                                    val intent = mediaProjectionManager.createScreenCaptureIntent()
+                                    mediaProjectionLauncher.launch(intent)
+                                } catch (e: Exception) {
+                                    e.printStackTrace()
+                                    viewModel.startScreenCaptureService(context)
+                                }
+                            } else {
+                                viewModel.startScreenCaptureService(context)
+                            }
+                        }
+                    },
                     colors = ButtonDefaults.buttonColors(
                         containerColor = if (isScreenCaptureActive) redColor else greenColor,
                         contentColor = Color.Black

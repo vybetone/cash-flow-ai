@@ -196,13 +196,29 @@ class CashFlowViewModel(application: Application) : AndroidViewModel(application
         _autoCaptureIntervalSeconds.value = seconds
     }
 
+    fun startScreenCaptureService(context: android.content.Context) {
+        _isScreenCaptureActive.value = true
+        com.example.data.ScreenCaptureService.startService(context)
+    }
+
+    fun stopScreenCaptureService(context: android.content.Context) {
+        _isScreenCaptureActive.value = false
+        com.example.data.ScreenCaptureService.stopService(context)
+    }
+
+    fun onMediaProjectionGranted(context: android.content.Context, resultCode: Int, data: android.content.Intent?) {
+        startScreenCaptureService(context)
+    }
+
+    fun onMediaProjectionDenied() {
+        _isScreenCaptureActive.value = false
+    }
+
     fun toggleScreenCaptureService(context: android.content.Context) {
-        val newStatus = !_isScreenCaptureActive.value
-        _isScreenCaptureActive.value = newStatus
-        if (newStatus) {
-            com.example.data.ScreenCaptureService.startService(context)
+        if (_isScreenCaptureActive.value) {
+            stopScreenCaptureService(context)
         } else {
-            com.example.data.ScreenCaptureService.stopService(context)
+            startScreenCaptureService(context)
         }
     }
 
