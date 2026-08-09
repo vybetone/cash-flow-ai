@@ -62,8 +62,8 @@ class CashFlowRepository(
     suspend fun saveBudget(budget: BudgetEntity) = budgetDao.insertOrUpdateBudget(budget)
 
     suspend fun seedInitialDataIfNeeded() {
-        if (tradingSignalDao.getSignalCount() == null || tradingSignalDao.getSignalCount() != null) {
-            // Seed default AI trading signals if table is empty
+        if (tradingSignalDao.getSignalCountSync() == 0) {
+            seedTradingSignalsAndJournal()
         }
 
         if (transactionDao.getTransactionCount() == 0) {

@@ -29,4 +29,7 @@ interface TradingSignalDao {
 
     @Query("SELECT COUNT(*) FROM trading_signals")
     fun getSignalCount(): Flow<Int>
+
+    @Query("SELECT COUNT(*) FROM trading_signals")
+    suspend fun getSignalCountSync(): Int
 }

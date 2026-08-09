@@ -46,6 +46,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.ui.CashFlowViewModel
+import com.example.ui.components.AiSignal90Card
 import com.example.ui.components.LiveChartOverlayCanvas
 import com.example.ui.components.LiveSignalCard
 
@@ -59,6 +60,7 @@ fun ScreenAnalysisHudScreen(
     val isScreenCaptureActive by viewModel.isScreenCaptureActive.collectAsState()
     val latestSignal by viewModel.latestActiveSignal.collectAsState()
     val allSignals by viewModel.filteredSignals.collectAsState()
+    val highConfidenceSignal by viewModel.highConfidenceAiSignal.collectAsState()
 
     val greenColor = Color(0xFF00E676)
     val redColor = Color(0xFFFF5252)
@@ -279,34 +281,29 @@ fun ScreenAnalysisHudScreen(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        if (allSignals.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "No trading signals generated yet.\nTap 'SCAN CHART NOW' to analyze your screen.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Color(0xFF78909C),
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                )
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .testTag("signals_list")
-            ) {
-                items(allSignals) { signal ->
-                    LiveSignalCard(
-                        signal = signal,
-                        onConvertToJournal = { viewModel.convertSignalToJournalEntry(it) },
-                        onDelete = { viewModel.deleteSignal(it) }
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .testTag("signals_list")
+        ) {
+            highConfidenceSignal?.let { sig ->
+                item {
+                    AiSignal90Card(
+                        signal = sig,
+                        onRefreshSignal = { viewModel.recalculateHighConfidenceSignal() },
+                        onLogToJournal = { viewModel.convertAiSignalToJournalEntry(it) }
                     )
+                    Spacer(modifier = Modifier.height(8.dp))
                 }
+            }
+
+            items(allSignals) { signal ->
+                LiveSignalCard(
+                    signal = signal,
+                    onConvertToJournal = { viewModel.convertSignalToJournalEntry(it) },
+                    onDelete = { viewModel.deleteSignal(it) }
+                )
             }
         }
     }

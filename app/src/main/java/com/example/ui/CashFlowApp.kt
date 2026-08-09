@@ -11,11 +11,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ScreenShare
 import androidx.compose.material.icons.filled.Analytics
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.CameraAlt
-import androidx.compose.material.icons.filled.ScreenShare
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -136,7 +136,7 @@ fun CashFlowApp(
                 NavigationBarItem(
                     selected = selectedTab == 0,
                     onClick = { viewModel.setSelectedTab(0) },
-                    icon = { Icon(Icons.Filled.ScreenShare, contentDescription = "Screen HUD") },
+                    icon = { Icon(Icons.AutoMirrored.Filled.ScreenShare, contentDescription = "Screen HUD") },
                     label = { Text("Screen HUD", fontFamily = FontFamily.Monospace) },
                     colors = itemColors,
                     modifier = Modifier.testTag("nav_item_screen_hud")

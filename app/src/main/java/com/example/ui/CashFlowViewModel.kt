@@ -1,13 +1,14 @@
 package com.example.ui
 
 import android.app.Application
-import android.content.Context
 import android.graphics.Bitmap
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.AppDatabase
 import com.example.data.BudgetEntity
 import com.example.data.CashFlowRepository
+import com.example.data.SignalRepository
+import com.example.data.TradingSignal
 import com.example.data.TradeJournalEntity
 import com.example.data.TradingSignalEntity
 import com.example.data.TransactionCategory
@@ -24,6 +25,9 @@ import kotlinx.coroutines.launch
 class CashFlowViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository: CashFlowRepository
+    private val aiSignalRepository: SignalRepository = SignalRepository()
+
+    val highConfidenceAiSignal: StateFlow<TradingSignal?> = aiSignalRepository.latestHighConfidenceSignal
 
     val allSignals: StateFlow<List<TradingSignalEntity>>
     val allJournalTrades: StateFlow<List<TradeJournalEntity>>
@@ -85,11 +89,9 @@ class CashFlowViewModel(application: Application) : AndroidViewModel(application
             budgetDao = database.budgetDao()
         )
 
-        // Removed automatic seeding of sample/fake trading journal data so the app starts with zeroed P&L and counts
-        // previous code:
-        // viewModelScope.launch {
-        //     repository.seedInitialDataIfNeeded()
-        // }
+        viewModelScope.launch {
+            repository.seedInitialDataIfNeeded()
+        }
 
         allSignals = repository.allSignals.stateIn(
             viewModelScope,
@@ -194,22 +196,11 @@ class CashFlowViewModel(application: Application) : AndroidViewModel(application
         _autoCaptureIntervalSeconds.value = seconds
     }
 
-    fun toggleScreenCaptureService(context: Context) {
+    fun toggleScreenCaptureService(context: android.content.Context) {
         val newStatus = !_isScreenCaptureActive.value
         _isScreenCaptureActive.value = newStatus
         if (newStatus) {
-            // Prefer Activity-mediated permission flow
-            if (context is com.example.MainActivity) {
-                try {
-                    (context as com.example.MainActivity).requestScreenCapturePermission()
-                } catch (t: Throwable) {
-                    // Fallback: attempt legacy helper (will likely fail on newer Android)
-                    com.example.data.ScreenCaptureService.startService(context)
-                }
-            } else {
-                // Not an Activity context — fallback to legacy helper, but warn
-                com.example.data.ScreenCaptureService.startService(context)
-            }
+            com.example.data.ScreenCaptureService.startService(context)
         } else {
             com.example.data.ScreenCaptureService.stopService(context)
         }
@@ -260,9 +251,34 @@ class CashFlowViewModel(application: Application) : AndroidViewModel(application
                 positionSize = 1.0,
                 status = "OPEN",
                 pnl = 0.0,
-                notes = "Converted from AI Signal: ${'$'}{signal.detectedPatterns}",
+                notes = "Converted from AI Signal: ${signal.detectedPatterns}",
                 screenshotPath = signal.imageUri,
                 chartPattern = signal.detectedPatterns
+            )
+            repository.insertJournalTrade(trade)
+        }
+    }
+
+    fun recalculateHighConfidenceSignal(symbol: String = "BTC/USD") {
+        viewModelScope.launch {
+            aiSignalRepository.generateSignal(symbol)
+        }
+    }
+
+    fun convertAiSignalToJournalEntry(signal: TradingSignal) {
+        viewModelScope.launch {
+            val trade = TradeJournalEntity(
+                assetSymbol = signal.symbol,
+                tradeType = if (signal.signalType == "SELL") "SELL" else "BUY",
+                entryPrice = signal.entryPrice,
+                exitPrice = null,
+                stopLoss = signal.stopLoss,
+                takeProfit = signal.takeProfit,
+                positionSize = 1.0,
+                status = "OPEN",
+                pnl = 0.0,
+                notes = "Converted from Strong AI Signal (${signal.confidencePercentage}%): ${signal.analysisReason}",
+                chartPattern = signal.candlePattern
             )
             repository.insertJournalTrade(trade)
         }
@@ -398,3 +414,4 @@ class CashFlowViewModel(application: Application) : AndroidViewModel(application
         }
     }
 }
+
