@@ -55,9 +55,10 @@ fun CashFlowApp(
     val selectedTab by viewModel.selectedTab.collectAsState()
     val isAnalyzing by viewModel.isAnalyzingChart.collectAsState()
 
-    val greenColor = Color(0xFF00E676)
-    val darkBackground = Color(0xFF0B0E14)
-    val surfaceColor = Color(0xFF131822)
+    val greenColor = MaterialTheme.colorScheme.primary
+    val backgroundColor = MaterialTheme.colorScheme.background
+    val surfaceColor = MaterialTheme.colorScheme.surface
+    val textColor = MaterialTheme.colorScheme.onSurface
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -91,7 +92,7 @@ fun CashFlowApp(
                             text = "CASH FLOW AI",
                             fontWeight = FontWeight.Black,
                             style = MaterialTheme.typography.titleLarge.copy(fontFamily = FontFamily.Monospace),
-                            color = Color.White
+                            color = textColor
                         )
 
                         Spacer(modifier = Modifier.width(10.dp))
@@ -114,22 +115,22 @@ fun CashFlowApp(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = darkBackground,
-                    titleContentColor = Color.White
+                    containerColor = surfaceColor,
+                    titleContentColor = textColor
                 )
             )
         },
         bottomBar = {
             NavigationBar(
                 containerColor = surfaceColor,
-                contentColor = Color.White,
+                contentColor = textColor,
                 modifier = Modifier.testTag("cashflow_bottom_nav")
             ) {
                 val itemColors = NavigationBarItemDefaults.colors(
                     selectedIconColor = greenColor,
                     selectedTextColor = greenColor,
-                    unselectedIconColor = Color(0xFF78909C),
-                    unselectedTextColor = Color(0xFF78909C),
+                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
                     indicatorColor = greenColor.copy(alpha = 0.15f)
                 )
 
@@ -184,7 +185,7 @@ fun CashFlowApp(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .background(darkBackground)
+                .background(backgroundColor)
         ) {
             when (selectedTab) {
                 0 -> ScreenAnalysisHudScreen(viewModel = viewModel)

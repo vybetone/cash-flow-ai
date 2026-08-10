@@ -215,9 +215,9 @@ class GeminiTradingEngine {
         val greenRatio = greenCount.toFloat() / totalSampled
 
         val isBullish = greenRatio >= 0.5f
-        val action = if (greenRatio > 0.60f) "BUY" else if (greenRatio < 0.40f) "SELL" else "WAIT"
+        val action = if (greenRatio > 0.58f) "BUY" else if (greenRatio < 0.42f) "SELL" else "WAIT"
         val trendDirection = if (isBullish) "BULLISH" else "BEARISH"
-        val confidence = (68 + (Math.abs(greenRatio - 0.5f) * 60)).roundToInt().coerceIn(65, 95)
+        val confidence = (82 + (Math.abs(greenRatio - 0.5f) * 36)).roundToInt().coerceIn(85, 98)
 
         val assetName = if (source == "CAMERA_ANALYSIS") "CAMERA_CHART" else "LIVE_SCREEN"
         val timeframe = "5m"

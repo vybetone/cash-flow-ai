@@ -53,6 +53,13 @@ class CashFlowViewModel(application: Application) : AndroidViewModel(application
     private val _latestActiveSignal = MutableStateFlow<TradingSignalEntity?>(null)
     val latestActiveSignal: StateFlow<TradingSignalEntity?> = _latestActiveSignal.asStateFlow()
 
+    private val _appThemeMode = MutableStateFlow(com.example.ui.theme.AppThemeMode.DARK)
+    val appThemeMode: StateFlow<com.example.ui.theme.AppThemeMode> = _appThemeMode.asStateFlow()
+
+    fun setAppThemeMode(mode: com.example.ui.theme.AppThemeMode) {
+        _appThemeMode.value = mode
+    }
+
     private val _preferredModel = MutableStateFlow("gemini-3.5-flash")
     val preferredModel: StateFlow<String> = _preferredModel.asStateFlow()
 
@@ -88,6 +95,11 @@ class CashFlowViewModel(application: Application) : AndroidViewModel(application
             transactionDao = database.transactionDao(),
             budgetDao = database.budgetDao()
         )
+
+        // Setup real-time continuous screen capture listener
+        com.example.data.ScreenCaptureService.onFrameCapturedListener = { bitmap ->
+            processChartFrameBitmap(bitmap, "SCREEN_ANALYSIS")
+        }
 
         viewModelScope.launch {
             repository.seedInitialDataIfNeeded()
@@ -134,6 +146,9 @@ class CashFlowViewModel(application: Application) : AndroidViewModel(application
             SharingStarted.WhileSubscribed(5000),
             emptyList()
         )
+
+        // Initialize local notification channel for high-confidence AI signals
+        com.example.data.SignalNotificationManager.createNotificationChannel(application)
     }
 
     val filteredSignals: StateFlow<List<TradingSignalEntity>> = combine(
@@ -196,9 +211,9 @@ class CashFlowViewModel(application: Application) : AndroidViewModel(application
         _autoCaptureIntervalSeconds.value = seconds
     }
 
-    fun startScreenCaptureService(context: android.content.Context) {
+    fun startScreenCaptureService(context: android.content.Context, resultCode: Int = -1, data: android.content.Intent? = null) {
         _isScreenCaptureActive.value = true
-        com.example.data.ScreenCaptureService.startService(context)
+        com.example.data.ScreenCaptureService.startService(context, resultCode, data)
     }
 
     fun stopScreenCaptureService(context: android.content.Context) {
@@ -207,7 +222,7 @@ class CashFlowViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun onMediaProjectionGranted(context: android.content.Context, resultCode: Int, data: android.content.Intent?) {
-        startScreenCaptureService(context)
+        startScreenCaptureService(context, resultCode, data)
     }
 
     fun onMediaProjectionDenied() {
@@ -236,12 +251,34 @@ class CashFlowViewModel(application: Application) : AndroidViewModel(application
                     preferredModel = _preferredModel.value
                 )
                 _latestActiveSignal.value = newSignal
+
+                // Trigger local notification for high-confidence patterns
+                if (newSignal.confidenceScore >= 70 || newSignal.action != "WAIT") {
+                    com.example.data.SignalNotificationManager.sendSignalNotification(
+                        getApplication(),
+                        newSignal
+                    )
+                }
             } catch (e: Exception) {
                 e.printStackTrace()
             } finally {
                 _isAnalyzingChart.value = false
             }
         }
+    }
+
+    fun sendTestSignalNotification() {
+        val sampleSignal = com.example.data.TradingSignal(
+            symbol = "BTC/USD",
+            signalType = "BUY",
+            confidencePercentage = 94,
+            entryPrice = 64850.0,
+            stopLoss = 63500.0,
+            takeProfit = 68200.0,
+            analysisReason = "High-confidence 15m Double Bottom breakout with bullish volume surge detected by AI Signal Engine.",
+            candlePattern = "DOUBLE BOTTOM BREAKOUT"
+        )
+        com.example.data.SignalNotificationManager.sendSignalNotification(getApplication(), sampleSignal)
     }
 
     fun deleteSignal(signal: TradingSignalEntity) {

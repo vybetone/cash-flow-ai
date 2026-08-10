@@ -38,8 +38,9 @@
 
         <service
             android:name=".data.ScreenCaptureService"
-            android:foregroundServiceType="mediaProjection"
+            android:foregroundServiceType="mediaProjection|dataSync"
             android:exported="false" />
     </application>
 
 </manifest>
+

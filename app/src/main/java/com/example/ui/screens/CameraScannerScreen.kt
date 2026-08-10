@@ -69,6 +69,12 @@ fun CameraScannerScreen(
 
     var hasCameraPermission by remember { mutableStateOf(false) }
 
+    val cameraPermissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        hasCameraPermission = granted
+    }
+
     LaunchedEffect(Unit) {
         val permissionState = ContextCompat.checkSelfPermission(
             context,
@@ -133,6 +139,19 @@ fun CameraScannerScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = Color(0xFF90A4AE)
                     )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Button(
+                        onClick = {
+                            cameraPermissionLauncher.launch(android.Manifest.permission.CAMERA)
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF00E676),
+                            contentColor = Color.Black
+                        ),
+                        modifier = Modifier.testTag("grant_camera_permission_btn")
+                    ) {
+                        Text("Grant Camera Permission", fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }
