@@ -106,8 +106,8 @@ class ScreenCaptureService : Service() {
                 // Notify listeners or active callback
                 onFrameCapturedListener?.invoke(bitmap)
 
-                // Schedule next frame capture every 4 seconds for unlimited continuous live analysis
-                handler.postDelayed(this, 4000L)
+                // Schedule next frame capture according to scanIntervalMs
+                handler.postDelayed(this, scanIntervalMs)
             }
         }
         handler.post(captureRunnable!!)
@@ -204,7 +204,12 @@ class ScreenCaptureService : Service() {
         private const val CHANNEL_ID = "cash_flow_ai_screen_capture"
         private const val NOTIFICATION_ID = 1001
 
+        var scanIntervalMs: Long = 5000L
         var onFrameCapturedListener: ((Bitmap) -> Unit)? = null
+
+        fun updateScanIntervalMs(intervalMs: Long) {
+            scanIntervalMs = intervalMs.coerceAtLeast(1000L)
+        }
 
         fun startService(context: Context, resultCode: Int = -1, resultData: Intent? = null) {
             try {

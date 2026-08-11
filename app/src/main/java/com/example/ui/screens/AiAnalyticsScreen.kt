@@ -47,7 +47,7 @@ fun AiAnalyticsScreen(
 
     val calculatedWinRate = if (totalClosedCount > 0) {
         (winCount.toFloat() / totalClosedCount * 100).toInt()
-    } else 88
+    } else 0
 
     val greenColor = Color(0xFF00E676)
     val goldColor = Color(0xFFFFD700)

@@ -81,27 +81,11 @@ class CashFlowRepository(
                     isRecurring = false
                 ),
                 TransactionEntity(
-                    title = "NVDA Long Win Realized",
-                    amount = 1420.50,
-                    type = TransactionType.INCOME,
-                    category = TransactionCategory.INVESTMENT,
-                    dateMillis = now - (day * 2),
-                    note = "AI Signal #104 - 15m Double Bottom Target Hit (+14.2%)"
-                ),
-                TransactionEntity(
-                    title = "BTC/USD Short Win Realized",
-                    amount = 890.00,
-                    type = TransactionType.INCOME,
-                    category = TransactionCategory.INVESTMENT,
-                    dateMillis = now - (day * 3),
-                    note = "AI Signal #102 - 1h Supply Rejection (+8.9%)"
-                ),
-                TransactionEntity(
                     title = "Bloomberg Terminal Subscription",
                     amount = 250.00,
                     type = TransactionType.EXPENSE,
                     category = TransactionCategory.UTILITIES,
-                    dateMillis = now - (day * 4),
+                    dateMillis = now - (day * 2),
                     note = "Market data & news feed"
                 )
             )
@@ -201,50 +185,6 @@ class CashFlowRepository(
         )
 
         initialSignals.forEach { tradingSignalDao.insertSignal(it) }
-
-        val initialJournalTrades = listOf(
-            TradeJournalEntity(
-                assetSymbol = "NVDA",
-                tradeType = "BUY",
-                entryPrice = 128.80,
-                exitPrice = 133.50,
-                stopLoss = 127.10,
-                takeProfit = 133.80,
-                positionSize = 300.0,
-                status = "CLOSED_WIN",
-                pnl = 1410.00,
-                notes = "Followed Cash Flow AI 1h Double Bottom signal. Took profit right near resistance level.",
-                chartPattern = "Double Bottom"
-            ),
-            TradeJournalEntity(
-                assetSymbol = "BTC/USD",
-                tradeType = "BUY",
-                entryPrice = 96000.00,
-                exitPrice = 98200.00,
-                stopLoss = 95100.00,
-                takeProfit = 98400.00,
-                positionSize = 0.4,
-                status = "CLOSED_WIN",
-                pnl = 880.00,
-                notes = "Captured 15m Liquidity Sweep signal. Execution was fast and precise.",
-                chartPattern = "Liquidity Sweep"
-            ),
-            TradeJournalEntity(
-                assetSymbol = "EUR/USD",
-                tradeType = "SELL",
-                entryPrice = 1.0918,
-                exitPrice = null,
-                stopLoss = 1.0935,
-                takeProfit = 1.0870,
-                positionSize = 50000.0,
-                status = "OPEN",
-                pnl = 120.00,
-                notes = "Trade active from live screen HUD signal.",
-                chartPattern = "Bearish Pinbar"
-            )
-        )
-
-        initialJournalTrades.forEach { tradeJournalDao.insertTrade(it) }
     }
 }
 
