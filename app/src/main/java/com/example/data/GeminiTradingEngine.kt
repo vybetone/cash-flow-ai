@@ -34,6 +34,7 @@ class GeminiTradingEngine {
             ""
         }
 
+        // Phase 1A: Only attempt real Gemini API call if valid key is present
         if (apiKey.isNotBlank() && apiKey != "MY_GEMINI_API_KEY") {
             try {
                 val apiResponse = callGeminiVisionApi(bitmap, apiKey, preferredModel)
@@ -45,8 +46,9 @@ class GeminiTradingEngine {
             }
         }
 
-        // Fallback to local intelligent chart vision analyzer
-        return@withContext fallbackLocalChartAnalysis(bitmap, source)
+        // Phase 1A: Return explicit failure state instead of fallback
+        // Users must know that analysis failed, not that it succeeded with fake data
+        return@withContext createAnalysisFailureSignal(source)
     }
 
     private fun callGeminiVisionApi(
@@ -81,9 +83,9 @@ class GeminiTradingEngine {
               "riskRewardRatio": "1:2.6",
               "detectedPatterns": ["Bullish Engulfing", "20 EMA Support", "RSI Bullish Divergence"],
               "keyLevels": ["Support: ${'$'}95,400", "Resistance: ${'$'}98,500"],
-              "reasoning": "Price tested a key demand zone at 95,400 with a strong bullish engulfing candle on high relative volume. 20 EMA is sloping upward with RSI recovering above 50, providing high probability for continuation."
+              "reasoning": "Price tested a key demand zone at 95,400 with a strong bullish engulfing candle on high relative volume. 20 EMA is sloping upward with RSI recovering above 50, providin[...]
             }
-        """.trimIndent()
+         """.trimIndent()
 
         val jsonPayload = JSONObject().apply {
             put("contents", JSONArray().apply {
@@ -188,76 +190,51 @@ class GeminiTradingEngine {
         return Base64.encodeToString(stream.toByteArray(), Base64.NO_WRAP)
     }
 
-    private fun fallbackLocalChartAnalysis(bitmap: Bitmap, source: String): TradingSignalEntity {
-        // Evaluate green vs red pixels to detect bullish vs bearish candle dominance
-        var greenCount = 0
-        var redCount = 0
-        val sampleStep = 8
-        val width = bitmap.width
-        val height = bitmap.height
-
-        for (y in 0 until height step sampleStep) {
-            for (x in 0 until width step sampleStep) {
-                val pixel = bitmap.getPixel(x, y)
-                val r = (pixel shr 16) and 0xFF
-                val g = (pixel shr 8) and 0xFF
-                val b = pixel and 0xFF
-
-                if (g > r + 20 && g > b + 10) {
-                    greenCount++
-                } else if (r > g + 20 && r > b + 10) {
-                    redCount++
-                }
-            }
-        }
-
-        val totalSampled = (greenCount + redCount).coerceAtLeast(1)
-        val greenRatio = greenCount.toFloat() / totalSampled
-
-        val isBullish = greenRatio >= 0.5f
-        val action = if (greenRatio > 0.58f) "BUY" else if (greenRatio < 0.42f) "SELL" else "WAIT"
-        val trendDirection = if (isBullish) "BULLISH" else "BEARISH"
-        val confidence = (82 + (Math.abs(greenRatio - 0.5f) * 36)).roundToInt().coerceIn(85, 98)
-
-        val assetName = if (source == "CAMERA_ANALYSIS") "CAMERA_CHART" else "LIVE_SCREEN"
-        val timeframe = "5m"
-
-        val patterns = if (action == "BUY") {
-            "Bullish Engulfing, 20 EMA Support Bounce, Order Block Hold"
-        } else if (action == "SELL") {
-            "Bearish Pinbar, Supply Zone Rejection, Lower High Breakdown"
-        } else {
-            "Consolidation Rectangle, Symmetrical Triangle, Liquidity Compression"
-        }
-
-        val keyLevels = if (isBullish) {
-            "Support: 1.0820 | Resistance: 1.0910 | Demand Zone: 1.0800"
-        } else {
-            "Resistance: 1.0950 | Support: 1.0840 | Supply Zone: 1.0980"
-        }
-
-        val reasoning = if (action == "BUY") {
-            "Strong bullish candle expansion detected across the central visual grid. Green volume bars dominate recent price action, with higher lows forming above the 20 EMA dynamic support line."
-        } else if (action == "SELL") {
-            "Bearish price rejection detected at major upper resistance grid level. Upper shadow wicks indicate heavy selling pressure and distribution into liquidity pools."
-        } else {
-            "Price is contracting within a key volatility squeeze zone. Awaiting a clear breakout above current range resistance or breakdown below range support."
-        }
-
+    /**
+     * Phase 1A: Create explicit "analysis failed" signal.
+     * This is returned when:
+     * - API key is missing/invalid
+     * - Gemini request fails
+     * - Network error
+     * - Response parse error
+     *
+     * Users can distinguish this from real analysis success.
+     */
+    private fun createAnalysisFailureSignal(source: String): TradingSignalEntity {
         return TradingSignalEntity(
-            symbol = assetName,
-            timeframe = timeframe,
-            action = action,
-            confidenceScore = confidence,
-            reasoning = reasoning,
-            entryZone = if (action == "BUY") "1.0850 - 1.0865" else if (action == "SELL") "1.0930 - 1.0945" else "Breakout trigger",
-            stopLoss = if (action == "BUY") "1.0820 (-30 pips)" else if (action == "SELL") "1.0975 (+30 pips)" else "Outside range",
-            takeProfit = if (action == "BUY") "1.0920 (+60 pips)" else if (action == "SELL") "1.0860 (+70 pips)" else "Target 1.5R",
-            riskRewardRatio = "1:2.3",
-            trendDirection = trendDirection,
-            detectedPatterns = patterns,
-            keyLevels = keyLevels,
-            source = source
+            symbol = "ANALYSIS_FAILED",
+            timeframe = "N/A",
+            action = "WAIT",
+            confidenceScore = 0,
+            reasoning = "AI ANALYSIS UNAVAILABLE: Gemini API key missing or API request failed. Real price history and market data required for trading signals.",
+            entryZone = "N/A",
+            stopLoss = "N/A",
+            takeProfit = "N/A",
+            riskRewardRatio = "N/A",
+            trendDirection = "UNKNOWN",
+            detectedPatterns = "N/A",
+            keyLevels = "N/A",
+            source = source,
+            tradeOutcome = "PENDING",
+            actualProfitLoss = 0.0
+        )
+    }
+
+    /**
+     * DEPRECATED: Pixel color analysis.
+     * Phase 1A removes this from production path.
+     * DO NOT use for real trading signals.
+     *
+     * This function is kept for reference/testing only.
+     * Production code must never invoke this.
+     */
+    @Deprecated("DO NOT USE. Produces fake analysis from pixel color histogram. Phase 1A removed this from production.", level = DeprecationLevel.ERROR)
+    private fun fallbackLocalChartAnalysis(bitmap: Bitmap, source: String): TradingSignalEntity {
+        // Placeholder - this code path is disabled in production
+        throw UnsupportedOperationException(
+            "Fallback chart analysis disabled in Phase 1A. " +
+            "Do not present pixel-color analysis as AI-generated trading signals. " +
+            "Return explicit 'ANALYSIS_FAILED' state instead."
         )
     }
 }
