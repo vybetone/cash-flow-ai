@@ -19,9 +19,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountBalance
+import androidx.compose.material.icons.filled.Computer
+import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -60,6 +64,8 @@ fun SettingsScreen(
     val preferredModel by viewModel.preferredModel.collectAsState()
     val autoInterval by viewModel.autoCaptureIntervalSeconds.collectAsState()
     val currentThemeMode by viewModel.appThemeMode.collectAsState()
+    val activeBroker by viewModel.activeBrokerAccount.collectAsState()
+    val brokerConnectionStatus by viewModel.brokerConnectionStatus.collectAsState()
 
     val context = LocalContext.current
     var hasNotificationPermission by remember {
@@ -385,6 +391,70 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(20.dp))
 
+        // Broker Connection Summary Card
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("broker_settings_card"),
+            colors = CardDefaults.cardColors(containerColor = cardBg),
+            shape = RoundedCornerShape(14.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, if (brokerConnectionStatus.startsWith("CONNECTED")) greenColor.copy(alpha = 0.5f) else cardBorder)
+        ) {
+            Column(modifier = Modifier.padding(14.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(imageVector = Icons.Default.AccountBalance, contentDescription = null, tint = greenColor)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Broker Connection Bridge",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                            color = textColor
+                        )
+                    }
+
+                    Surface(
+                        color = if (brokerConnectionStatus.startsWith("CONNECTED")) greenColor.copy(alpha = 0.2f) else cardBorder,
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text(
+                            text = if (brokerConnectionStatus.startsWith("CONNECTED")) "ACTIVE" else "DISCONNECTED",
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace
+                            ),
+                            color = if (brokerConnectionStatus.startsWith("CONNECTED")) greenColor else Color(0xFFFFB300)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Connected: ${activeBroker?.accountName ?: "CashFlow Paper Engine"} (${activeBroker?.brokerType ?: "PAPER_TRADING"})\n" +
+                            "Supports Deriv WebSocket API, MetaTrader 5 Bridge, Interactive Brokers (IBKR), OANDA v20 REST & Virtual Sandbox.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = subTextColor
+                )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Button(
+                    onClick = { viewModel.setSelectedTab(3) },
+                    colors = ButtonDefaults.buttonColors(containerColor = greenColor, contentColor = Color.Black),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth().testTag("open_broker_tab_btn")
+                ) {
+                    Text("Open Broker Control Panel →", fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(20.dp))
+
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(containerColor = cardBg),
@@ -405,6 +475,82 @@ fun SettingsScreen(
                 Text("Max Capital Risk Per Trade: 1.0%", style = MaterialTheme.typography.bodySmall, color = subTextColor)
                 Text("Default Stop Loss Distance: 1.5 ATR", style = MaterialTheme.typography.bodySmall, color = subTextColor)
                 Text("Minimum Risk/Reward Threshold: 1 : 2.0", style = MaterialTheme.typography.bodySmall, color = subTextColor)
+            }
+        }
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        // PC & Phone Cross-Platform Card
+        Card(
+            modifier = Modifier.fillMaxWidth().testTag("pc_phone_compatibility_card"),
+            colors = CardDefaults.cardColors(containerColor = cardBg),
+            shape = RoundedCornerShape(14.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, greenColor.copy(alpha = 0.4f))
+        ) {
+            Column(modifier = Modifier.padding(14.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(imageVector = Icons.Default.Devices, contentDescription = null, tint = greenColor)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "PC & Phone Compatibility",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        color = textColor
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.Top
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Computer,
+                        contentDescription = "PC",
+                        tint = Color(0xFF90CAF9),
+                        modifier = Modifier.size(20.dp).padding(top = 2.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column {
+                        Text(
+                            text = "Windows PC & Desktop Workstation",
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                            color = textColor
+                        )
+                        Text(
+                            text = "Run seamlessly via Windows Subsystem for Android (WSA), Google Play Games on PC, or Emulators (BlueStacks, LDPlayer). Layout automatically adapts to wide screens with a side navigation rail, window resizing, and mouse/keyboard navigation.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = subTextColor
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.Top
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PhoneAndroid,
+                        contentDescription = "Phone",
+                        tint = greenColor,
+                        modifier = Modifier.size(20.dp).padding(top = 2.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column {
+                        Text(
+                            text = "Android Mobile Phones & Tablets",
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                            color = textColor
+                        )
+                        Text(
+                            text = "Runs natively as an installable APK on Android 8.0+. Supports real-time camera chart scanning, floating HUD over mobile trading apps, and background push notifications.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = subTextColor
+                        )
+                    }
+                }
             }
         }
     }

@@ -6,6 +6,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -25,6 +26,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Psychology
+import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -60,6 +62,7 @@ fun LiveSignalCard(
     signal: TradingSignalEntity,
     onConvertToJournal: (TradingSignalEntity) -> Unit,
     onDelete: (TradingSignalEntity) -> Unit,
+    onExecuteOnBroker: ((TradingSignalEntity) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -322,6 +325,26 @@ fun LiveSignalCard(
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (onExecuteOnBroker != null && signal.action != "WAIT") {
+                        Button(
+                            onClick = { onExecuteOnBroker(signal) },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF00E676),
+                                contentColor = Color.Black
+                            ),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                            modifier = Modifier.testTag("execute_broker_btn_${signal.id}")
+                        ) {
+                            Text(
+                                text = "⚡ Execute",
+                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(6.dp))
+                    }
+
                     IconButton(
                         onClick = { onDelete(signal) },
                         modifier = Modifier.testTag("delete_signal_btn_${signal.id}")

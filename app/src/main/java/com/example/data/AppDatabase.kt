@@ -11,9 +11,10 @@ import androidx.room.TypeConverters
         TradingSignalEntity::class,
         TradeJournalEntity::class,
         TransactionEntity::class,
-        BudgetEntity::class
+        BudgetEntity::class,
+        BrokerAccountEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -22,6 +23,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun tradeJournalDao(): TradeJournalDao
     abstract fun transactionDao(): TransactionDao
     abstract fun budgetDao(): BudgetDao
+    abstract fun brokerAccountDao(): BrokerAccountDao
 
     companion object {
         @Volatile

@@ -151,7 +151,8 @@ class SignalEngine {
      * Generates a high-precision AI Trading Signal by running all 5 technical engines.
      */
     fun generateSignal(symbol: String = "BTC/USD", priceHistory: List<Double>? = null): TradingSignal {
-        val prices = priceHistory ?: generateDefaultPriceSeries()
+        val asset = MarketUniverse.findAssetBySymbol(symbol)
+        val prices = priceHistory ?: generatePriceSeriesForAsset(asset)
 
         val opens = prices.mapIndexed { idx, p -> if (idx == 0) p else prices[idx - 1] }
         val closes = prices
@@ -235,19 +236,20 @@ class SignalEngine {
         }
 
         val currentPrice = prices.last()
-        val (entryPrice, stopLoss, takeProfit) = calculateTradeLevels(currentPrice, signalType)
+        val (entryPrice, stopLoss, takeProfit) = calculateTradeLevels(currentPrice, signalType, asset)
 
         val reason = buildString {
-            append("5-Indicator Confluence Matrix: ")
+            append("[${asset.category.badgeLabel}] 5-Indicator Confluence Matrix: ")
             append("1) RSI at ${String.format("%.1f", rsi)}. ")
             append("2) MACD: $macdSignalStr. ")
             append("3) Trend: $emaTrendStr. ")
             append("4) Candlestick: $candlePattern. ")
-            append("5) Momentum: $momentumStr.")
+            append("5) Momentum: $momentumStr. ")
+            append("Target: ${asset.pipUnit}")
         }
 
         return TradingSignal(
-            symbol = symbol,
+            symbol = asset.symbol,
             signalType = signalType,
             confidencePercentage = rawConfidence,
             entryPrice = entryPrice,
@@ -263,35 +265,61 @@ class SignalEngine {
         )
     }
 
-    private fun calculateTradeLevels(currentPrice: Double, signalType: String): Triple<Double, Double, Double> {
-        val roundedEntry = Math.round(currentPrice * 100.0) / 100.0
+    private fun calculateTradeLevels(
+        currentPrice: Double,
+        signalType: String,
+        asset: MarketAsset
+    ): Triple<Double, Double, Double> {
+        val multiplier = if (asset.decimalDigits == 4) 10000.0 else 100.0
+        val roundedEntry = Math.round(currentPrice * multiplier) / multiplier
+
+        val slPct = when (asset.category) {
+            MarketCategory.FOREX -> 0.0035 // ~35-40 pips
+            MarketCategory.GOLD -> 0.0080  // ~$20
+            MarketCategory.CRYPTO -> 0.015 // ~1.5%
+            MarketCategory.STOCKS -> 0.012 // ~1.2%
+            MarketCategory.ALL_MARKETS -> 0.010
+        }
+        val tpPct = slPct * 2.8 // ~1:2.8 risk reward
+
         return when (signalType) {
             "BUY" -> Triple(
                 roundedEntry,
-                Math.round((roundedEntry * 0.982) * 100.0) / 100.0,
-                Math.round((roundedEntry * 1.045) * 100.0) / 100.0
+                Math.round((roundedEntry * (1.0 - slPct)) * multiplier) / multiplier,
+                Math.round((roundedEntry * (1.0 + tpPct)) * multiplier) / multiplier
             )
             "SELL" -> Triple(
                 roundedEntry,
-                Math.round((roundedEntry * 1.018) * 100.0) / 100.0,
-                Math.round((roundedEntry * 0.955) * 100.0) / 100.0
+                Math.round((roundedEntry * (1.0 + slPct)) * multiplier) / multiplier,
+                Math.round((roundedEntry * (1.0 - tpPct)) * multiplier) / multiplier
             )
             else -> Triple(
                 roundedEntry,
-                Math.round((roundedEntry * 0.99) * 100.0) / 100.0,
-                Math.round((roundedEntry * 1.01) * 100.0) / 100.0
+                Math.round((roundedEntry * 0.99) * multiplier) / multiplier,
+                Math.round((roundedEntry * 1.01) * multiplier) / multiplier
             )
         }
     }
 
-    private fun generateDefaultPriceSeries(): List<Double> {
+    fun generatePriceSeriesForAsset(asset: MarketAsset): List<Double> {
         val series = mutableListOf<Double>()
-        var base = 64100.0
+        var base = asset.basePrice
+        val scale = when (asset.category) {
+            MarketCategory.FOREX -> 0.0004
+            MarketCategory.GOLD -> 1.5
+            MarketCategory.CRYPTO -> 80.0
+            MarketCategory.STOCKS -> 0.8
+            MarketCategory.ALL_MARKETS -> 1.0
+        }
         for (i in 0 until 50) {
-            val delta = Math.sin(i * 0.2) * 180.0 + (if (i > 30) i * 15.0 else -i * 5.0)
+            val delta = (Math.sin(i * 0.2) * 1.2 + (if (i > 30) (i - 30) * 0.3 else -(i * 0.1))) * scale
             base += delta
             series.add(base)
         }
         return series
+    }
+
+    private fun generateDefaultPriceSeries(): List<Double> {
+        return generatePriceSeriesForAsset(MarketUniverse.BTC_USD)
     }
 }
