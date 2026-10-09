@@ -29,27 +29,25 @@ data class RawMarketData(
     val lastPrice: Double,
     val bid: Double,
     val ask: Double,
+    val bidAskIsEstimated: Boolean = false,  // True if bid/ask are calculated estimates, not real market
     val change24hPercent: Double,
+    val change24hIsAvailable: Boolean = true,  // False if 24h change unavailable from API
     val high24h: Double,
     val low24h: Double,
     val volume24h: String,
-    val historyCloses: List<Double>,
+    val historyCandles: List<PriceCandlestick> = emptyList(),  // Full OHLC candles
     val timestampSeconds: Long,
     val sourceProvider: String
 )
 
 object GenuineMarketDataValidator {
-    // Max acceptable staleness: 48 hours for stocks/forex weekend coverage, 10 minutes for 24/7 crypto
     const val MAX_STALENESS_CRYPTO_SECONDS = 600L
     const val MAX_STALENESS_MARKET_SECONDS = 172800L
 
     fun isTimestampValid(symbol: String, timestampSeconds: Long, currentEpochSeconds: Long = System.currentTimeMillis() / 1000): Boolean {
         if (timestampSeconds <= 0L) return false
         val age = currentEpochSeconds - timestampSeconds
-        if (age < -300) {
-            // Timestamp is in the future beyond clock drift
-            return false
-        }
+        if (age < -300) return false
         val maxAge = if (symbol.contains("BTC") || symbol.contains("ETH")) {
             MAX_STALENESS_CRYPTO_SECONDS
         } else {
@@ -66,18 +64,19 @@ object GenuineMarketDataValidator {
 /**
  * Network client that communicates with genuine market data APIs.
  * Connects directly to:
- * 1. Deriv API (Public endpoints)
- * 2. Binance API (Crypto & Gold spot)
- * 3. Open Exchange Rates / ER-API (Interbank Forex rates)
- * 4. Yahoo Finance Chart API / EODHD (Equities)
+ * 1. Binance API (Crypto & Gold spot with real OHLC klines)
+ * 2. Finnhub / Alpha Vantage (Forex historical OHLC candles)
+ * 3. Yahoo Finance Chart API (Equities)
  *
  * Never invents fake random walk prices if APIs fail.
+ * CRITICAL: Forex data must be genuine OHLC, not synthetic.
  */
 class RealMarketDataApiClient(
     private val client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(8, TimeUnit.SECONDS)
         .readTimeout(8, TimeUnit.SECONDS)
-        .build()
+        .build(),
+    private val forexProvider: ForexHistoricalDataProvider? = null
 ) {
 
     suspend fun fetchRealQuote(asset: MarketAsset): MarketFetchResult = withContext(Dispatchers.IO) {
@@ -118,7 +117,6 @@ class RealMarketDataApiClient(
 
     private fun fetchCrypto(asset: MarketAsset): RawMarketData {
         val binanceSymbol = if (asset.symbol.contains("BTC")) "BTCUSDT" else "ETHUSDT"
-        // 24hr ticker for live bid, ask, price, 24h change, high, low, volume
         val tickerUrl = "https://api.binance.com/api/v3/ticker/24hr?symbol=$binanceSymbol"
         val tickerReq = Request.Builder()
             .url(tickerUrl)
@@ -138,25 +136,26 @@ class RealMarketDataApiClient(
         val quoteVol = tickerJson.optDouble("quoteVolume", 0.0)
         val closeTimeMs = tickerJson.optLong("closeTime", System.currentTimeMillis())
 
-        // Fetch recent hourly klines for technical indicator calculation
-        val klinesUrl = "https://api.binance.com/api/v3/klines?symbol=$binanceSymbol&interval=1h&limit=30"
+        val klinesUrl = "https://api.binance.com/api/v3/klines?symbol=$binanceSymbol&interval=1h&limit=100"
         val klinesReq = Request.Builder().url(klinesUrl).build()
-        val closes = mutableListOf<Double>()
+        val candles = mutableListOf<PriceCandlestick>()
         try {
             client.newCall(klinesReq).execute().use { resp ->
                 if (resp.isSuccessful) {
                     val arr = JSONArray(resp.body?.string() ?: "[]")
                     for (i in 0 until arr.length()) {
-                        val candle = arr.getJSONArray(i)
-                        val closeVal = candle.getString(4).toDoubleOrNull()
-                        if (closeVal != null) closes.add(closeVal)
+                        val kline = arr.getJSONArray(i)
+                        val tsMs = kline.getLong(0)
+                        val open = kline.getString(1).toDoubleOrNull() ?: continue
+                        val high = kline.getString(2).toDoubleOrNull() ?: continue
+                        val low = kline.getString(3).toDoubleOrNull() ?: continue
+                        val close = kline.getString(4).toDoubleOrNull() ?: continue
+                        val volume = kline.getString(7).toDoubleOrNull()
+                        candles.add(PriceCandlestick(tsMs, open, high, low, close, volume))
                     }
                 }
             }
-        } catch (_: Exception) {
-            // If klines fail, use lastPrice
-        }
-        if (closes.isEmpty()) closes.add(lastPrice)
+        } catch (_: Exception) {}
 
         val volString = if (quoteVol > 1_000_000_000) {
             String.format(java.util.Locale.US, "$%.2fB 24h Vol", quoteVol / 1_000_000_000)
@@ -169,18 +168,19 @@ class RealMarketDataApiClient(
             lastPrice = lastPrice,
             bid = bidPrice,
             ask = askPrice,
+            bidAskIsEstimated = false,  // Binance provides real bid/ask
             change24hPercent = change24h,
+            change24hIsAvailable = true,
             high24h = high24h,
             low24h = low24h,
             volume24h = volString,
-            historyCloses = closes,
+            historyCandles = candles,
             timestampSeconds = closeTimeMs / 1000,
             sourceProvider = "Binance Genuine Market API"
         )
     }
 
     private fun fetchGold(asset: MarketAsset): RawMarketData {
-        // Gold spot backed by PAXGUSDT (1 PAXG = 1 Fine Troy Ounce of Gold)
         val tickerUrl = "https://api.binance.com/api/v3/ticker/24hr?symbol=PAXGUSDT"
         val tickerReq = Request.Builder()
             .url(tickerUrl)
@@ -200,20 +200,25 @@ class RealMarketDataApiClient(
         val quoteVol = tickerJson.optDouble("quoteVolume", 0.0)
         val closeTimeMs = tickerJson.optLong("closeTime", System.currentTimeMillis())
 
-        val klinesUrl = "https://api.binance.com/api/v3/klines?symbol=PAXGUSDT&interval=1h&limit=30"
-        val closes = mutableListOf<Double>()
+        val klinesUrl = "https://api.binance.com/api/v3/klines?symbol=PAXGUSDT&interval=1h&limit=100"
+        val candles = mutableListOf<PriceCandlestick>()
         try {
             client.newCall(Request.Builder().url(klinesUrl).build()).execute().use { resp ->
                 if (resp.isSuccessful) {
                     val arr = JSONArray(resp.body?.string() ?: "[]")
                     for (i in 0 until arr.length()) {
-                        val closeVal = arr.getJSONArray(i).getString(4).toDoubleOrNull()
-                        if (closeVal != null) closes.add(closeVal)
+                        val kline = arr.getJSONArray(i)
+                        val tsMs = kline.getLong(0)
+                        val open = kline.getString(1).toDoubleOrNull() ?: continue
+                        val high = kline.getString(2).toDoubleOrNull() ?: continue
+                        val low = kline.getString(3).toDoubleOrNull() ?: continue
+                        val close = kline.getString(4).toDoubleOrNull() ?: continue
+                        val volume = kline.getString(7).toDoubleOrNull()
+                        candles.add(PriceCandlestick(tsMs, open, high, low, close, volume))
                     }
                 }
             }
         } catch (_: Exception) {}
-        if (closes.isEmpty()) closes.add(lastPrice)
 
         val volString = String.format(java.util.Locale.US, "$%.2fM Gold Spot Vol", quoteVol / 1_000_000)
 
@@ -222,56 +227,62 @@ class RealMarketDataApiClient(
             lastPrice = lastPrice,
             bid = bidPrice,
             ask = askPrice,
+            bidAskIsEstimated = false,
             change24hPercent = change24h,
+            change24hIsAvailable = true,
             high24h = high24h,
             low24h = low24h,
             volume24h = volString,
-            historyCloses = closes,
+            historyCandles = candles,
             timestampSeconds = closeTimeMs / 1000,
             sourceProvider = "Binance Spot Gold (PAXG/USD)"
         )
     }
 
-    private fun fetchForex(asset: MarketAsset): RawMarketData {
-        // Open Exchange Rates / ER-API for real-time interbank foreign exchange rates
-        val url = "https://open.er-api.com/v6/latest/USD"
-        val req = Request.Builder()
-            .url(url)
-            .header("User-Agent", "CashFlowAI/1.0 (Android)")
-            .build()
-        val json = client.newCall(req).execute().use { resp ->
-            if (!resp.isSuccessful) throw IOException("Forex API HTTP ${resp.code}")
-            JSONObject(resp.body?.string() ?: throw IOException("Empty body"))
+    private suspend fun fetchForex(asset: MarketAsset): RawMarketData {
+        val provider = forexProvider ?: ForexHistoricalDataProvider()
+        
+        // Fetch genuine historical OHLC candles
+        val historyResult = provider.fetchForexHistory(asset.symbol, timeframe = "1h", limit = 120)
+        if (historyResult !is PriceHistoryResult.Success) {
+            throw IOException("Forex OHLC unavailable: ${(historyResult as PriceHistoryResult.Failure).reason}")
         }
 
-        val rates = json.getJSONObject("rates")
-        val timestamp = json.optLong("time_last_update_unix", System.currentTimeMillis() / 1000)
-
-        val price = when (asset.symbol) {
-            "EUR/USD" -> 1.0 / rates.getDouble("EUR")
-            "GBP/USD" -> 1.0 / rates.getDouble("GBP")
-            "USD/JPY" -> rates.getDouble("JPY")
-            else -> 1.0
+        val candles = historyResult.candlesticks
+        if (candles.size < 50) {
+            throw IOException("Insufficient forex history: ${candles.size} candles, need ≥50")
         }
 
-        // Half-spread for interbank forex (0.8 pips = 0.00008, or 0.008 for JPY)
-        val pipFactor = if (asset.decimalDigits == 4) 0.0001 else 0.01
-        val halfSpread = (0.8 * pipFactor) / 2.0
-        val bid = price - halfSpread
-        val ask = price + halfSpread
+        val lastCandle = candles.last()
+        val lastPrice = lastCandle.close
+
+        // Bid/Ask are ESTIMATES for forex (0.5 pip spread = 0.00005)
+        val halfSpread = 0.00005
+        val bid = lastPrice - halfSpread
+        val ask = lastPrice + halfSpread
+
+        // Calculate 24h change from historical data
+        val oneDayAgoCandle = candles.dropLast(24).lastOrNull()?.close ?: lastPrice
+        val change24hPercent = if (oneDayAgoCandle > 0) {
+            ((lastPrice - oneDayAgoCandle) / oneDayAgoCandle) * 100.0
+        } else {
+            0.0  // Fallback to 0 if not calculable (don't invent)
+        }
 
         return RawMarketData(
             symbol = asset.symbol,
-            lastPrice = price,
+            lastPrice = lastPrice,
             bid = bid,
             ask = ask,
-            change24hPercent = 0.12, // Interbank baseline delta
-            high24h = price * 1.0035,
-            low24h = price * 0.9965,
-            volume24h = "Interbank Liquid Feed",
-            historyCloses = listOf(price * 0.998, price * 0.999, price * 1.001, price),
-            timestampSeconds = timestamp,
-            sourceProvider = "Open Interbank FX API"
+            bidAskIsEstimated = true,  // MARK as estimate
+            change24hPercent = change24hPercent,
+            change24hIsAvailable = oneDayAgoCandle > 0,  // Only available if we have 1d history
+            high24h = candles.maxOf { it.high },
+            low24h = candles.minOf { it.low },
+            volume24h = "Real Forex Feed",
+            historyCandles = candles,  // Full genuine OHLC
+            timestampSeconds = lastCandle.timestamp / 1000L,
+            sourceProvider = "Genuine Forex OHLC API (Finnhub/Alpha Vantage)"
         )
     }
 
@@ -297,19 +308,27 @@ class RealMarketDataApiClient(
         val timeSec = meta.getLong("regularMarketTime")
 
         val changePercent = if (prevClose > 0) ((price - prevClose) / prevClose) * 100.0 else 0.0
-        val closes = mutableListOf<Double>()
+        val candles = mutableListOf<PriceCandlestick>()
         try {
             val quotesObj = res.getJSONObject("indicators").getJSONArray("quote").getJSONObject(0)
+            val timestampsArr = res.getJSONArray("timestamp")
             val closeArr = quotesObj.optJSONArray("close")
-            if (closeArr != null) {
+            val openArr = quotesObj.optJSONArray("open")
+            val highArr = quotesObj.optJSONArray("high")
+            val lowArr = quotesObj.optJSONArray("low")
+
+            if (closeArr != null && timestampsArr != null) {
                 for (i in 0 until closeArr.length()) {
-                    if (!closeArr.isNull(i)) {
-                        closes.add(closeArr.getDouble(i))
-                    }
+                    if (closeArr.isNull(i)) continue
+                    val close = closeArr.getDouble(i)
+                    val open = if (i < openArr?.length() ?: 0 && !openArr.isNull(i)) openArr.getDouble(i) else close
+                    val hi = if (i < highArr?.length() ?: 0 && !highArr.isNull(i)) highArr.getDouble(i) else close
+                    val lo = if (i < lowArr?.length() ?: 0 && !lowArr.isNull(i)) lowArr.getDouble(i) else close
+                    val ts = timestampsArr.getLong(i) * 1000L
+                    candles.add(PriceCandlestick(ts, open, hi, lo, close, null))
                 }
             }
         } catch (_: Exception) {}
-        if (closes.isEmpty()) closes.add(price)
 
         val volString = if (volume > 1_000_000) {
             String.format(java.util.Locale.US, "%.1fM Shares Vol", volume / 1_000_000.0)
@@ -323,11 +342,13 @@ class RealMarketDataApiClient(
             lastPrice = price,
             bid = price - halfSpread,
             ask = price + halfSpread,
+            bidAskIsEstimated = true,  // Estimates
             change24hPercent = changePercent,
+            change24hIsAvailable = true,
             high24h = high,
             low24h = low,
             volume24h = volString,
-            historyCloses = closes.takeLast(30),
+            historyCandles = candles.takeLast(100),
             timestampSeconds = timeSec,
             sourceProvider = "Yahoo Finance Real-Time API"
         )
@@ -341,16 +362,31 @@ class RealMarketDataApiClient(
         val rawSpreadUnits = abs(ask - bid) / pipFactor
         val spreadUnits = roundToDecimals(rawSpreadUnits.coerceAtLeast(0.1), 1)
 
-        val history = if (raw.historyCloses.size >= 2) raw.historyCloses else listOf(raw.low24h, raw.lastPrice)
-        val high24h = roundToDecimals(max(raw.high24h, history.maxOrNull() ?: lastPrice), asset.decimalDigits)
-        val low24h = roundToDecimals(min(raw.low24h, history.minOrNull() ?: lastPrice), asset.decimalDigits)
+        // Use full OHLC candles if available, otherwise fall back to closes only
+        val history = if (raw.historyCandles.isNotEmpty()) {
+            raw.historyCandles.map { it.close }
+        } else {
+            emptyList()
+        }
+
+        // CRITICAL: Reject if history is insufficient (< 50 for real data)
+        if (history.size < 50) {
+            throw IOException(
+                "Cannot generate indicators from ${history.size} closes. " +
+                "Real technical analysis requires ≥ 50 candles. " +
+                "This protects against trading on insufficient/synthetic data."
+            )
+        }
+
+        val high24h = raw.high24h
+        val low24h = raw.low24h
 
         val rsi = calculateRsi(history, 14)
         val ema20 = calculateEma(history, 20)
         val ema50 = calculateEma(history, 50)
         val ema200 = calculateEma(history, 200)
         val (macdLine, macdSignal, macdHist) = calculateMacd(history)
-        val atr = calculateAtr(history)
+        val atr = calculateAtrFromCandles(raw.historyCandles)
         val candlePattern = evaluateCandlePattern(history)
 
         val supportLevel = roundToDecimals(min(low24h, lastPrice - (atr * 1.5)), asset.decimalDigits)
@@ -371,9 +407,12 @@ class RealMarketDataApiClient(
             bid = bid,
             ask = ask,
             spreadPipsOrPoints = spreadUnits,
-            change24hPercent = roundToDecimals(raw.change24hPercent, 2),
-            high24h = high24h,
-            low24h = low24h,
+            change24hPercent = roundToDecimals(
+                if (raw.change24hIsAvailable) raw.change24hPercent else 0.0,
+                2
+            ),
+            high24h = roundToDecimals(high24h, asset.decimalDigits),
+            low24h = roundToDecimals(low24h, asset.decimalDigits),
             volume24h = raw.volume24h,
             rsi14 = roundToDecimals(rsi, 1),
             macdLine = roundToDecimals(macdLine, 4),
@@ -408,7 +447,7 @@ class RealMarketDataApiClient(
                 avgGain = (avgGain * (period - 1) + change) / period
                 avgLoss = (avgLoss * (period - 1)) / period
             } else {
-                avgGain = (avgGain * (period - 1) + abs(change)) / period
+                avgGain = (avgGain * (period - 1)) / period
                 avgLoss = (avgLoss * (period - 1) + abs(change)) / period
             }
         }
@@ -438,13 +477,25 @@ class RealMarketDataApiClient(
         return Triple(macdLine, macdSignal, hist)
     }
 
-    private fun calculateAtr(prices: List<Double>): Double {
-        if (prices.size < 2) return 1.0
-        val ranges = mutableListOf<Double>()
-        for (i in 1 until prices.size) {
-            ranges.add(abs(prices[i] - prices[i - 1]))
+    /**
+     * Calculate ATR (Average True Range) using genuine OHLC candles.
+     * True Range = max(high - low, abs(high - prevClose), abs(low - prevClose))
+     * ATR = average of last 14 True Range values
+     */
+    private fun calculateAtrFromCandles(candles: List<PriceCandlestick>): Double {
+        if (candles.size < 2) return 1.0
+        val trueRanges = mutableListOf<Double>()
+        for (i in 1 until candles.size) {
+            val curr = candles[i]
+            val prev = candles[i - 1]
+            val tr = maxOf(
+                curr.high - curr.low,
+                abs(curr.high - prev.close),
+                abs(curr.low - prev.close)
+            )
+            trueRanges.add(tr)
         }
-        return ranges.takeLast(14).average()
+        return if (trueRanges.isNotEmpty()) trueRanges.takeLast(14).average() else 1.0
     }
 
     private fun evaluateCandlePattern(prices: List<Double>): String {
